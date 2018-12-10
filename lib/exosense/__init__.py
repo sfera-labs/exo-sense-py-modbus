@@ -157,7 +157,7 @@ class ExoSense:
         self.PIN_DI1 = 'P18'
         self.PIN_DI2 = 'P17'
         self.PIN_TTL1 = 'P20'
-        self.PIN_TTL1 = 'P19'
+        self.PIN_TTL2 = 'P19'
         self.PIN_DO1 = 'P23'
         self.PIN_TX = 'P3'
         self.PIN_RX = 'P4'
