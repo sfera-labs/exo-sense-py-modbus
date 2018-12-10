@@ -1,0 +1,5 @@
+ADDRESS = 10
+BAUDRATE = 19200
+DATA_BITS = 8
+STOP_BITS = 1
+PARITY = 1 # 1 = even, 2 = odd, 3 = none
