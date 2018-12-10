@@ -159,6 +159,8 @@ class ExoSense:
         self.PIN_TTL1 = 'P20'
         self.PIN_TTL1 = 'P19'
         self.PIN_DO1 = 'P23'
+        self.PIN_TX = 'P3'
+        self.PIN_RX = 'P4'
         self.PIN_TX_EN = 'P12'
         self.PIN_PIR = 'P16'
         self.PIN_BUZZER = 'P8'
@@ -173,6 +175,9 @@ class ExoSense:
         self.sound = Sound(self.PIN_MIC)
         self.light = Light(self, 0x44)
         self.thpa = THPA(self, 0x77)
+
+        Pin(self.PIN_TX, mode=Pin.OUT)
+        Pin(self.PIN_RX, mode=Pin.IN, pull=None)
 
         self._i2c = None
 
