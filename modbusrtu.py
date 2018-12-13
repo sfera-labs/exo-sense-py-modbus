@@ -1,10 +1,14 @@
 from uModbus.serial import Serial
+import uModbus.const as ModbusConst
 from machine import UART
+from machine import Pin
 import _thread
+import time
 
 class ModbusRTU:
-    def __init__(self, exo, addr, baudrate=19200, data_bits=8, stop_bits=1, parity=UART.EVEN, pins=None, ctrl_pin=None):
+    def __init__(self, exo, enable_ap_func, addr, baudrate=19200, data_bits=8, stop_bits=1, parity=UART.EVEN, pins=None, ctrl_pin=None):
         self._exo = exo
+        self._enable_ap = enable_ap_func
         self._addr = [addr]
         self._itf = Serial(
             uart_id=1,
@@ -15,6 +19,7 @@ class ModbusRTU:
             pins=pins,
             ctrl_pin=ctrl_pin
         )
+        Pin(pins[1], mode=Pin.IN, pull=None)
 
     def _beep(self, ms):
         self._exo.buzzer(1)
@@ -27,18 +32,10 @@ class ModbusRTU:
         self._exo.DO1(0)
 
     def process(self):
-        request = self._itf.get_request(unit_addr_list=self._addr, timeout=2000)
+        request = self._itf.get_request(unit_addr_list=self._addr, timeout=5000)
 
         if request == None:
-            print("=========")
-            return
-
-        print("Got request")
-        print("Unit addr: {}".format(request.unit_addr))
-        print("Function: {}".format(request.function))
-        print("Starting register addr: {}".format(request.register_addr))
-        print("Quantity: {}".format(request.quantity))
-        print("Data: {}".format(request.data))
+            return False
 
         if request.function == ModbusConst.READ_DISCRETE_INPUTS:
             if request.register_addr >= 101 and request.register_addr <= 102:
@@ -97,6 +94,12 @@ class ModbusRTU:
                     request.send_response()
                 else:
                     request.send_exception(ModbusConst.ILLEGAL_DATA_VALUE)
+            elif request.register_addr == 5:
+                if request.data[0] == 0xFF:
+                    _thread.start_new_thread(self._enable_ap, ())
+                    request.send_response()
+                else:
+                    request.send_exception(ModbusConst.ILLEGAL_DATA_VALUE)
             else:
                 request.send_exception(ModbusConst.ILLEGAL_DATA_ADDRESS)
 
@@ -108,7 +111,7 @@ class ModbusRTU:
             elif request.register_addr == 501:
                 request.send_response([int(self._exo.thpa.pressure() * 10)], signed=False)
             elif request.register_addr == 601:
-                request.send_response([self._exo.thpa.gas_resistance() // 1000], signed=False)
+                request.send_response([int(self._exo.thpa.gas_resistance() / 1000)], signed=False)
             elif request.register_addr == 701:
                 request.send_response([int(self._exo.light.lux() * 10)], signed=False)
             elif request.register_addr >= 801 and request.register_addr <= 802:
@@ -129,11 +132,15 @@ class ModbusRTU:
             if request.register_addr == 901:
                 val = request.data_as_registers(signed=False)[0]
                 _thread.start_new_thread(self._beep, (val,))
-            if request.register_addr == 211:
+                request.send_response()
+            elif request.register_addr == 211:
                 val = request.data_as_registers(signed=False)[0]
                 _thread.start_new_thread(self._do1_pulse, (val,))
+                request.send_response()
             else:
                 request.send_exception(ModbusConst.ILLEGAL_DATA_ADDRESS)
 
         else:
             request.send_exception(ModbusConst.ILLEGAL_FUNCTION)
+
+        return True
