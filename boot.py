@@ -19,6 +19,7 @@ server.deinit()
 server.init(login=(config.FTP_USER, config.FTP_PASSWORD))
 
 wlan = WLAN()
+wlan.deinit()
 
 pycom.rgbled(0xff0000)
 print('Booted')
