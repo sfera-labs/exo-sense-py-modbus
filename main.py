@@ -65,8 +65,7 @@ if config.MB_ADDRESS > 0:
 
     while True:
         try:
-            exo.sound.init(
-            )
+            exo.sound.init()
             break
         except Exception as e:
             print("Sound init error: {}".format(e))
@@ -74,8 +73,7 @@ if config.MB_ADDRESS > 0:
 
     while True:
         try:
-            exo.light.init(
-            )
+            exo.light.init()
             break
         except Exception as e:
             print("Light init error: {}".format(e))
