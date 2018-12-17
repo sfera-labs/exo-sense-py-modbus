@@ -35,7 +35,7 @@ The access point is automatically disabled after the time specified by `AP_ON_TI
 |:--------:|-----------|
 |Red|Starting up|
 |Green|Ready and waiting for first Modbus request|
-|Off|Runinng|
+|Off|Running|
 |Blue|Access point on|
 |Yellow|Enabling access point|
 |Red blink|Not configured, reboot to enable access point|
@@ -60,7 +60,7 @@ For the "Functions" column:
 |5|W|5|1|-|-|Write ON (0xFF00) to enable access point mode|
 |101|R|2|1|-|-|Digital input DI1|
 |102|R|2|1|-|-|Digital input DI2|
-|201|R/W|1,5|1|-|-|Digital outpt DO1|
+|201|R/W|1,5|1|-|-|Digital output DO1|
 |211|W|6|16|unsigned short|ms|DO1 pulse|
 |301|R|4|16|signed short|&deg;C/10|Temperature|
 |401|R|4|16|unsigned short|&permil;|Relative humidity|
