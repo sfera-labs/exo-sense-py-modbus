@@ -46,7 +46,7 @@ def _process_modbus_rtu():
     global _status_mb_got_request
     start_ms = time.ticks_ms()
     pycom.rgbled(0x00ff00)
-    print('Modbus started')
+    print('Modbus started - addr:', config.MB_ADDRESS)
     while True:
         try:
             if modbusrtu.process():
