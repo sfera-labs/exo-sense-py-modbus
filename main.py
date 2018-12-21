@@ -35,12 +35,17 @@ def _sample_sound():
             time.sleep(1)
 
 def _read_thpa():
+    for i in range(10):
+        try:
+            exo.thpa.read()
+        except Exception as e:
+            print("THPA read error: {}".format(e))
     while True:
         try:
             exo.thpa.read()
         except Exception as e:
             print("THPA read error: {}".format(e))
-        time.sleep(1)
+        time.sleep(5)
 
 def _process_modbus_rtu():
     global _status_mb_got_request
@@ -103,7 +108,7 @@ if config.MB_ADDRESS > 0:
 
     _thread.start_new_thread(_sample_sound, ())
     _thread.start_new_thread(_read_thpa, ())
-    _thread.start_new_thread(_process_modbus_rtu, ())
+    _process_modbus_rtu()
 
 else:
     _enable_ap()
