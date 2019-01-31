@@ -1,23 +1,27 @@
 import time
 import _thread
 import pycom
+from machine import WDT
 from exosense import ExoSense
-from modbusrtu import ModbusRTU
-import config
+from modbus import ModbusRTU
+from modbus import ModbusTCP
 
-_status_ap_enabled_once = False
-_status_mb_got_request = False
-
-def _enable_ap():
+def _enable_ap(feed_wdt=False):
     global _status_ap_enabled_once
     pycom.rgbled(0xffff00)
     wlan.deinit()
-    time.sleep(2)
-    wlan.init(mode=WLAN.AP, ssid=config.AP_SSID, auth=(WLAN.WPA2, config.AP_PASSWORD), channel=config.AP_CHANNEL, antenna=WLAN.INT_ANT)
-    print('AP on for {} secs'.format(config.AP_ON_TIME_SEC))
+    time.sleep(1)
+    wlan.init(mode=WLAN.AP, ssid=config_AP_SSID, auth=(WLAN.WPA2, config_AP_PASSWORD), channel=config_AP_CHANNEL, antenna=WLAN.INT_ANT)
+    print('AP on for {} secs'.format(config_AP_ON_TIME_SEC))
     pycom.rgbled(0x0000ff)
     _status_ap_enabled_once = True
-    time.sleep(config.AP_ON_TIME_SEC)
+
+    start_ms = time.ticks_ms()
+    while time.ticks_diff(start_ms, time.ticks_ms()) < config_AP_ON_TIME_SEC * 1000:
+        if feed_wdt:
+            _wdt.feed()
+        time.sleep(1)
+
     wlan.deinit()
     print('AP off')
     if _status_mb_got_request:
@@ -25,10 +29,55 @@ def _enable_ap():
     else:
         pycom.rgbled(0x00ff00)
 
+def _connect_wifi():
+    pycom.rgbled(0xff0030)
+    wlan.deinit()
+    time.sleep(1)
+    wlan.init(mode=WLAN.STA)
+    if config.MB_TCP_IP == 'dhcp':
+        wlan.ifconfig(config=('dhcp'))
+    else:
+        wlan.ifconfig(config=(config.MB_TCP_IP, config.MB_TCP_MASK, config.MB_TCP_GW, config.MB_TCP_DNS))
+
+    if config.MB_TCP_WIFI_SEC == 0:
+        auth = (None, None)
+    elif config.MB_TCP_WIFI_SEC == 1:
+        auth = (WLAN.WEP, config.MB_TCP_WIFI_PWD)
+    elif config.MB_TCP_WIFI_SEC == 2:
+        auth = (WLAN.WPA, config.MB_TCP_WIFI_PWD)
+    else:
+        auth = (WLAN.WPA2, config.MB_TCP_WIFI_PWD)
+
+    print("Connecting to WiFi '{}'...".format(config.MB_TCP_WIFI_SSID))
+    wlan.connect(ssid=config.MB_TCP_WIFI_SSID, auth=auth)
+
+    blink = True
+    start_ms = time.ticks_ms()
+    while not wlan.isconnected():
+        if not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
+            and not _status_ap_enabled_once \
+            and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
+            _enable_ap(True)
+            return False
+        blink = not blink
+        pycom.rgbled(0xff0030 if blink else 0x000000)
+        _wdt.feed()
+        time.sleep(0.3)
+
+    print("Connected!")
+    print(wlan.ifconfig())
+
+    if _status_mb_got_request:
+        pycom.rgbled(0x000000)
+    else:
+        pycom.rgbled(0x00ff00)
+
+    return True
+
 def _sample_sound():
     while True:
         try:
-            exo.sound.sample()
+            _exo.sound.sample()
             time.sleep_ms(1)
         except Exception as e:
             print("Sound sample error: {}".format(e))
@@ -37,84 +86,142 @@ def _sample_sound():
 def _read_thpa():
     for i in range(10):
         try:
-            exo.thpa.read()
+            _exo.thpa.read()
         except Exception as e:
             print("THPA read error: {}".format(e))
     while True:
         try:
-            exo.thpa.read()
+            _exo.thpa.read()
         except Exception as e:
             print("THPA read error: {}".format(e))
         time.sleep(5)
 
 def _process_modbus_rtu():
     global _status_mb_got_request
+    modbusrtu = ModbusRTU(
+        exo=_exo,
+        enable_ap_func=_enable_ap,
+        addr=config.MB_RTU_ADDRESS,
+        baudrate=config.MB_RTU_BAUDRATE,
+        data_bits=config.MB_RTU_DATA_BITS,
+        stop_bits=config.MB_RTU_STOP_BITS,
+        parity=UART.ODD if config.MB_RTU_PARITY == 2 else None if config.MB_RTU_PARITY == 3 else UART.EVEN,
+        pins=(_exo.PIN_TX, _exo.PIN_RX),
+        ctrl_pin=_exo.PIN_TX_EN
+    )
     start_ms = time.ticks_ms()
     pycom.rgbled(0x00ff00)
-    print('Modbus started - addr:', config.MB_ADDRESS)
+    print('Modbus RTU started - addr:', config.MB_RTU_ADDRESS)
     while True:
         try:
             if modbusrtu.process():
                 if not _status_mb_got_request:
                     pycom.rgbled(0x000000)
                     _status_mb_got_request = True
-            elif not _status_mb_got_request and config.AP_ON_MB_TIMEOUT_SEC > 0 \
+            elif not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
                 and not _status_ap_enabled_once \
-                and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_MB_TIMEOUT_SEC * 1000:
+                and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
                 _thread.start_new_thread(_enable_ap, ())
+            _wdt.feed()
         except Exception as e:
             print("Modbus RTU process error: {}".format(e))
-
-if config.MB_ADDRESS > 0:
-    exo = ExoSense()
-
-    while True:
-        try:
-            exo.sound.init()
-            break
-        except Exception as e:
-            print("Sound init error: {}".format(e))
             time.sleep(1)
 
+def _process_modbus_tcp():
+    global _status_mb_got_request
+    modbustcp = ModbusTCP(exo=_exo)
+    pycom.rgbled(0x00ff00)
     while True:
         try:
-            exo.light.init()
-            break
+            if not wlan.isconnected():
+                if _connect_wifi():
+                    local_ip = wlan.ifconfig()[0]
+                    modbustcp.bind(local_ip=local_ip, local_port=config.MB_TCP_PORT)
+                    print('Modbus TCP started on {}:{}'.format(local_ip, config.MB_TCP_PORT))
+            elif modbustcp.process():
+                if not _status_mb_got_request:
+                    pycom.rgbled(0x000000)
+                    _status_mb_got_request = True
+            _wdt.feed()
         except Exception as e:
-            print("Light init error: {}".format(e))
+            print("Modbus TCP process error: {}".format(e))
             time.sleep(1)
 
-    while True:
-        try:
-            exo.thpa.init(
-                temp_offset=(config.TEMP_OFFSET - 5)
-            )
-            break
-        except Exception as e:
-            print("Light init error: {}".format(e))
-            time.sleep(1)
 
-    modbusrtu = ModbusRTU(
-        exo=exo,
-        enable_ap_func=_enable_ap,
-        addr=config.MB_ADDRESS,
-        baudrate=config.MB_BAUDRATE,
-        data_bits=config.MB_DATA_BITS,
-        stop_bits=config.MB_STOP_BITS,
-        parity=UART.ODD if config.MB_PARITY == 2 else None if config.MB_PARITY == 3 else UART.EVEN,
-        pins=(exo.PIN_TX, exo.PIN_RX),
-        ctrl_pin=exo.PIN_TX_EN
-    )
+try:
+    import config
+    config_AP_SSID = config.AP_SSID
+    config_AP_PASSWORD = config.AP_PASSWORD
+    config_AP_CHANNEL = config.AP_CHANNEL
+    config_AP_ON_TIME_SEC = config.AP_ON_TIME_SEC
+    config_FTP_USER = config.FTP_USER
+    config_FTP_PASSWORD = config.FTP_PASSWORD
+    config_ERROR = False
+except Exception:
+    print('Configuration error - Starting with default configuration')
+    config_AP_SSID = 'Exo_AP'
+    config_AP_PASSWORD = 'exosense'
+    config_AP_CHANNEL = 7
+    config_AP_ON_TIME_SEC = 600
+    config_FTP_USER = 'exo'
+    config_FTP_PASSWORD = 'sense'
+    config_ERROR = True
 
-    _thread.start_new_thread(_sample_sound, ())
-    _thread.start_new_thread(_read_thpa, ())
-    _process_modbus_rtu()
+if config_AP_ON_TIME_SEC < 120:
+    config_AP_ON_TIME_SEC = 120
 
-else:
-    _enable_ap()
-    print('Waiting for configuration...')
-    while True:
-        pycom.rgbled(0x000000)
-        time.sleep(1)
-        pycom.rgbled(0xff0000)
-        time.sleep(1)
+server = Server()
+server.deinit()
+server.init(login=(config_FTP_USER, config_FTP_PASSWORD))
+
+try:
+    if not config_ERROR and (config.MB_RTU_ADDRESS > 0 or len(config.MB_TCP_IP) > 0):
+        _exo = ExoSense()
+        _wdt = WDT(timeout=20000)
+        _status_ap_enabled_once = False
+        _status_mb_got_request = False
+
+        while True:
+            try:
+                _exo.sound.init()
+                break
+            except Exception as e:
+                print("Sound init error: {}".format(e))
+                time.sleep(1)
+
+        while True:
+            try:
+                _exo.light.init()
+                break
+            except Exception as e:
+                print("Light init error: {}".format(e))
+                time.sleep(1)
+
+        while True:
+            try:
+                _exo.thpa.init(
+                    temp_offset=(config.TEMP_OFFSET - 5)
+                )
+                break
+            except Exception as e:
+                print("Light init error: {}".format(e))
+                time.sleep(1)
+
+        _thread.start_new_thread(_sample_sound, ())
+        _thread.start_new_thread(_read_thpa, ())
+
+        if config.MB_RTU_ADDRESS > 0:
+            _process_modbus_rtu()
+        else:
+            _process_modbus_tcp()
+
+except Exception as e:
+    print("Main error: {}".format(e))
+
+_enable_ap()
+print('Waiting for reboot...')
+while True:
+    pycom.rgbled(0x000000)
+    time.sleep(1)
+    pycom.rgbled(0xff0000)
+    time.sleep(1)

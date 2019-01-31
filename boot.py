@@ -4,19 +4,13 @@ from machine import UART
 import os
 import time
 import pycom
-import config
 
 pycom.heartbeat(False)
 
 uart = UART(0, 115200)
 os.dupterm(uart)
 
-if config.AP_ON_TIME_SEC < 120:
-    config.AP_ON_TIME_SEC = 120
-
-server = Server()
-server.deinit()
-server.init(login=(config.FTP_USER, config.FTP_PASSWORD))
+print('=== Exo Sense Py - Modbus RTU/TCP - v1.0.0 ===')
 
 wlan = WLAN()
 wlan.deinit()

@@ -1,8 +1,11 @@
 import uModBus.functions as functions
 import uModBus.const as Const
+from uModBus.common import Request
+from uModBus.common import ModbusException
 import struct
 import socket
 import machine
+import time
 
 class TCP:
 
@@ -124,3 +127,96 @@ class TCP:
                                                         starting_address, quantity=len(register_values))
 
         return operation_status
+
+class TCPServer:
+
+    def __init__(self):
+        self._sock = None
+        self._client_sock = None
+
+    def bind(self, local_ip, local_port=502):
+        if self._client_sock:
+            self._client_sock.close()
+        if self._sock:
+            self._sock.close()
+        self._sock = socket.socket()
+        self._sock.bind(socket.getaddrinfo(local_ip, local_port)[0][-1])
+        self._sock.listen()
+
+    def _send(self, modbus_pdu, slave_addr):
+        size = len(modbus_pdu)
+        fmt = 'B' * size
+        adu = struct.pack('>HHHB' + fmt, self._req_tid, 0, size + 1, slave_addr, *modbus_pdu)
+        self._client_sock.send(adu)
+
+    def send_response(self, slave_addr, function_code, request_register_addr, request_register_qty, request_data, values=None, signed=True):
+        modbus_pdu = functions.response(function_code, request_register_addr, request_register_qty, request_data, values, signed)
+        self._send(modbus_pdu, slave_addr)
+
+    def send_exception_response(self, slave_addr, function_code, exception_code):
+        modbus_pdu = functions.exception_response(function_code, exception_code)
+        self._send(modbus_pdu, slave_addr)
+
+    def get_request(self, unit_addr_list=None, timeout=None):
+        if self._sock == None:
+            raise Exception('Modbus TCP server not bound')
+
+        start_ms = time.ticks_ms()
+        while True:
+            elapsed = time.ticks_diff(start_ms, time.ticks_ms())
+            if elapsed > timeout:
+                return None
+
+            if self._client_sock == None:
+                accept_timeout = None if timeout == None else (timeout - elapsed) / 1000
+            else:
+                accept_timeout = 0
+            self._sock.settimeout(accept_timeout)
+
+            new_client_sock = None
+            try:
+                new_client_sock, client_address = self._sock.accept()
+            except OSError as e:
+                if e.args[0] != 11: # 11 = timeout expired
+                    raise e
+
+            if new_client_sock != None:
+                if self._client_sock != None:
+                    self._client_sock.close()
+                self._client_sock = new_client_sock
+                self._client_sock.settimeout(0.2) # recv() timeout
+
+            if self._client_sock != None:
+                try:
+                    req = self._client_sock.recv(256)
+                    if len(req) == 0:
+                        # connection terminated
+                        self._client_sock.close()
+                        self._client_sock = None
+                        continue
+
+                    req_header_no_uid = req[:Const.MBAP_HDR_LENGTH - 1]
+                    self._req_tid, req_pid, req_len = struct.unpack('>HHH', req_header_no_uid)
+                    req_uid_and_pdu = req[Const.MBAP_HDR_LENGTH - 1:Const.MBAP_HDR_LENGTH + req_len - 1]
+
+                except TimeoutError:
+                    continue
+                except Exception as e:
+                    print("Modbus request error:", e)
+                    self._client_sock.close()
+                    self._client_sock = None
+                    continue
+
+                if (req_pid != 0):
+                    print("Modbus request error: PID not 0")
+                    self._client_sock.close()
+                    self._client_sock = None
+                    continue
+
+                if unit_addr_list != None and req_uid_and_pdu[0] not in unit_addr_list:
+                    continue
+
+                try:
+                    return Request(self, req_uid_and_pdu)
+                except ModbusException as e:
+                    self.send_exception_response(req[0], e.function_code, e.exception_code)
