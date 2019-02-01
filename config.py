@@ -1,5 +1,5 @@
 # Access point WiFi name (SSID)
-AP_SSID = 'Exo_AP'
+AP_SSID = 'ExoSensePy'
 
 # Access point WiFi password
 AP_PASSWORD = 'exosense'

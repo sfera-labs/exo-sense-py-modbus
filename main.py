@@ -1,78 +1,131 @@
 import time
 import _thread
 import pycom
-from machine import WDT
+import machine
+import uos
 from exosense import ExoSense
 from modbus import ModbusRTU
 from modbus import ModbusTCP
 
+def _disable_config_check():
+    try:
+        global _config_check_alarm
+        if _config_check_alarm != None:
+            _config_check_alarm.cancel()
+            _config_check_alarm = None
+            print('Config check stopped')
+    except Exception as e:
+        print('Exception in _disable_config_check():', e)
+
+def _enable_config_check():
+    try:
+        global _config_check_alarm
+        if _config_check_alarm == None:
+            _config_check_alarm = machine.Timer.Alarm(_config_check, 5, periodic=True)
+            print('Config check started')
+    except Exception as e:
+        print('Exception in _enable_config_check():', e)
+
+def _config_check(alarm):
+    try:
+        if _config_stat != _get_config_stat():
+            print('Config changed - restarting in 5 secs...')
+            alarm.cancel()
+            time.sleep(5)
+            machine.reset()
+    except Exception as e:
+        print('Exception in _config_check():', e)
+
+def _get_config_stat():
+    try:
+        return uos.stat("config.py")
+    except Exception as e:
+        return None
+
 def _enable_ap(feed_wdt=False):
-    global _status_ap_enabled_once
-    pycom.rgbled(0xffff00)
-    wlan.deinit()
-    time.sleep(1)
-    wlan.init(mode=WLAN.AP, ssid=config_AP_SSID, auth=(WLAN.WPA2, config_AP_PASSWORD), channel=config_AP_CHANNEL, antenna=WLAN.INT_ANT)
-    print('AP on for {} secs'.format(config_AP_ON_TIME_SEC))
-    pycom.rgbled(0x0000ff)
-    _status_ap_enabled_once = True
-
-    start_ms = time.ticks_ms()
-    while time.ticks_diff(start_ms, time.ticks_ms()) < config_AP_ON_TIME_SEC * 1000:
-        if feed_wdt:
-            _wdt.feed()
+    try:
+        global _status_ap_enabled_once
+        pycom.rgbled(0xffff00)
+        wlan.deinit()
         time.sleep(1)
+        wlan.init(mode=WLAN.AP, ssid=config_AP_SSID, auth=(WLAN.WPA2, config_AP_PASSWORD), channel=config_AP_CHANNEL, antenna=WLAN.INT_ANT)
+        print("AP '{}' on for {} secs".format(config_AP_SSID, config_AP_ON_TIME_SEC))
+        pycom.rgbled(0x0000ff)
+        _status_ap_enabled_once = True
 
-    wlan.deinit()
-    print('AP off')
-    if _status_mb_got_request:
-        pycom.rgbled(0x000000)
-    else:
-        pycom.rgbled(0x00ff00)
+        _enable_config_check()
+
+        start_ms = time.ticks_ms()
+        while time.ticks_diff(start_ms, time.ticks_ms()) < config_AP_ON_TIME_SEC * 1000:
+            print('.', end='')
+            if feed_wdt:
+                _wdt.feed()
+            time.sleep(1)
+
+        wlan.deinit()
+        print('AP off')
+
+        _disable_config_check()
+
+        if _status_mb_got_request:
+            pycom.rgbled(0x000000)
+        else:
+            pycom.rgbled(0x00ff00)
+    except Exception as e:
+        print('Exception in _enable_ap():', e)
+        raise e
 
 def _connect_wifi():
-    pycom.rgbled(0xff0030)
-    wlan.deinit()
-    time.sleep(1)
-    wlan.init(mode=WLAN.STA)
-    if config.MB_TCP_IP == 'dhcp':
-        wlan.ifconfig(config=('dhcp'))
-    else:
-        wlan.ifconfig(config=(config.MB_TCP_IP, config.MB_TCP_MASK, config.MB_TCP_GW, config.MB_TCP_DNS))
+    try:
+        pycom.rgbled(0xff0030)
+        wlan.deinit()
+        time.sleep(1)
+        wlan.init(mode=WLAN.STA)
+        if config.MB_TCP_IP == 'dhcp':
+            wlan.ifconfig(config=('dhcp'))
+        else:
+            wlan.ifconfig(config=(config.MB_TCP_IP, config.MB_TCP_MASK, config.MB_TCP_GW, config.MB_TCP_DNS))
 
-    if config.MB_TCP_WIFI_SEC == 0:
-        auth = (None, None)
-    elif config.MB_TCP_WIFI_SEC == 1:
-        auth = (WLAN.WEP, config.MB_TCP_WIFI_PWD)
-    elif config.MB_TCP_WIFI_SEC == 2:
-        auth = (WLAN.WPA, config.MB_TCP_WIFI_PWD)
-    else:
-        auth = (WLAN.WPA2, config.MB_TCP_WIFI_PWD)
+        if config.MB_TCP_WIFI_SEC == 0:
+            auth = (None, None)
+        elif config.MB_TCP_WIFI_SEC == 1:
+            auth = (WLAN.WEP, config.MB_TCP_WIFI_PWD)
+        elif config.MB_TCP_WIFI_SEC == 2:
+            auth = (WLAN.WPA, config.MB_TCP_WIFI_PWD)
+        else:
+            auth = (WLAN.WPA2, config.MB_TCP_WIFI_PWD)
 
-    print("Connecting to WiFi '{}'...".format(config.MB_TCP_WIFI_SSID))
-    wlan.connect(ssid=config.MB_TCP_WIFI_SSID, auth=auth)
+        print("Connecting to WiFi '{}'...".format(config.MB_TCP_WIFI_SSID))
+        wlan.connect(ssid=config.MB_TCP_WIFI_SSID, auth=auth)
 
-    blink = True
-    start_ms = time.ticks_ms()
-    while not wlan.isconnected():
-        if not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
-            and not _status_ap_enabled_once \
-            and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
-            _enable_ap(True)
-            return False
-        blink = not blink
-        pycom.rgbled(0xff0030 if blink else 0x000000)
-        _wdt.feed()
-        time.sleep(0.3)
+        blink = True
+        start_ms = time.ticks_ms()
+        while not wlan.isconnected():
+            print('.', end='')
+            if not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
+                and not _status_ap_enabled_once \
+                and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
+                print('WiFi connection timeout')
+                wlan.disconnect()
+                _enable_ap(True)
+                return False
+            blink = not blink
+            pycom.rgbled(0xff0030 if blink else 0x000000)
+            _wdt.feed()
+            time.sleep(0.3)
 
-    print("Connected!")
-    print(wlan.ifconfig())
+        print("Connected!")
+        print(wlan.ifconfig())
 
-    if _status_mb_got_request:
-        pycom.rgbled(0x000000)
-    else:
-        pycom.rgbled(0x00ff00)
+        if _status_mb_got_request:
+            pycom.rgbled(0x000000)
+        else:
+            pycom.rgbled(0x00ff00)
 
-    return True
+        return True
+    except Exception as e:
+        print('Exception in _connect_wifi():', e)
+        raise e
 
 def _sample_sound():
     while True:
@@ -133,20 +186,25 @@ def _process_modbus_tcp():
     pycom.rgbled(0x00ff00)
     while True:
         try:
-            if not wlan.isconnected():
+            if wlan.isconnected():
+                if modbustcp.process():
+                    if not _status_mb_got_request:
+                        pycom.rgbled(0x000000)
+                        _status_mb_got_request = True
+            else:
                 if _connect_wifi():
+                    _enable_config_check()
                     local_ip = wlan.ifconfig()[0]
                     modbustcp.bind(local_ip=local_ip, local_port=config.MB_TCP_PORT)
                     print('Modbus TCP started on {}:{}'.format(local_ip, config.MB_TCP_PORT))
-            elif modbustcp.process():
-                if not _status_mb_got_request:
-                    pycom.rgbled(0x000000)
-                    _status_mb_got_request = True
+
             _wdt.feed()
+
         except Exception as e:
             print("Modbus TCP process error: {}".format(e))
             time.sleep(1)
 
+# main =========================================================================
 
 try:
     import config
@@ -159,7 +217,7 @@ try:
     config_ERROR = False
 except Exception:
     print('Configuration error - Starting with default configuration')
-    config_AP_SSID = 'Exo_AP'
+    config_AP_SSID = 'ExoSensePy'
     config_AP_PASSWORD = 'exosense'
     config_AP_CHANNEL = 7
     config_AP_ON_TIME_SEC = 600
@@ -167,17 +225,20 @@ except Exception:
     config_FTP_PASSWORD = 'sense'
     config_ERROR = True
 
-if config_AP_ON_TIME_SEC < 120:
-    config_AP_ON_TIME_SEC = 120
-
-server = Server()
-server.deinit()
-server.init(login=(config_FTP_USER, config_FTP_PASSWORD))
-
 try:
+    if config_AP_ON_TIME_SEC < 120:
+        config_AP_ON_TIME_SEC = 120
+
+    server = Server()
+    server.deinit()
+    server.init(login=(config_FTP_USER, config_FTP_PASSWORD))
+
+    _config_check_alarm = None
+    _config_stat = _get_config_stat()
+
     if not config_ERROR and (config.MB_RTU_ADDRESS > 0 or len(config.MB_TCP_IP) > 0):
         _exo = ExoSense()
-        _wdt = WDT(timeout=20000)
+        _wdt = machine.WDT(timeout=20000)
         _status_ap_enabled_once = False
         _status_mb_got_request = False
 
@@ -216,7 +277,7 @@ try:
             _process_modbus_tcp()
 
 except Exception as e:
-    print("Main error: {}".format(e))
+    print('Exception in main:', e)
 
 _enable_ap()
 print('Waiting for reboot...')
