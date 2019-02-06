@@ -1,46 +1,22 @@
 import time
 import _thread
 import pycom
-import machine
 import uos
-from exosense import ExoSense
-from modbus import ModbusRTU
-from modbus import ModbusTCP
+from machine import WDT
 
-def _disable_config_check():
+def _disable_web_server():
     try:
-        global _config_check_alarm
-        if _config_check_alarm != None:
-            _config_check_alarm.cancel()
-            _config_check_alarm = None
-            print('Config check stopped')
+        _web.stop()
+        print('Web server disabled')
     except Exception as e:
-        print('Exception in _disable_config_check():', e)
+        print('Exception in _disable_web_server():', e)
 
-def _enable_config_check():
+def _enable_web_server():
     try:
-        global _config_check_alarm
-        if _config_check_alarm == None:
-            _config_check_alarm = machine.Timer.Alarm(_config_check, 5, periodic=True)
-            print('Config check started')
+        _web.start()
+        print('Web server enabled')
     except Exception as e:
-        print('Exception in _enable_config_check():', e)
-
-def _config_check(alarm):
-    try:
-        if _config_stat != _get_config_stat():
-            print('Config changed - restarting in 5 secs...')
-            alarm.cancel()
-            time.sleep(5)
-            machine.reset()
-    except Exception as e:
-        print('Exception in _config_check():', e)
-
-def _get_config_stat():
-    try:
-        return uos.stat("config.py")
-    except Exception as e:
-        return None
+        print('Exception in _enable_web_server():', e)
 
 def _enable_ap(feed_wdt=False):
     try:
@@ -53,7 +29,7 @@ def _enable_ap(feed_wdt=False):
         pycom.rgbled(0x0000ff)
         _status_ap_enabled_once = True
 
-        _enable_config_check()
+        _enable_web_server()
 
         start_ms = time.ticks_ms()
         while time.ticks_diff(start_ms, time.ticks_ms()) < config_AP_ON_TIME_SEC * 1000:
@@ -65,7 +41,7 @@ def _enable_ap(feed_wdt=False):
         wlan.deinit()
         print('AP off')
 
-        _disable_config_check()
+        _disable_web_server()
 
         if _status_mb_got_request:
             pycom.rgbled(0x000000)
@@ -177,7 +153,7 @@ def _process_modbus_rtu():
                 _thread.start_new_thread(_enable_ap, ())
             _wdt.feed()
         except Exception as e:
-            print("Modbus RTU process error: {}".format(e))
+            print("Modbus RTU process error:", e)
             time.sleep(1)
 
 def _process_modbus_tcp():
@@ -193,7 +169,7 @@ def _process_modbus_tcp():
                         _status_mb_got_request = True
             else:
                 if _connect_wifi():
-                    _enable_config_check()
+                    _enable_web_server()
                     local_ip = wlan.ifconfig()[0]
                     modbustcp.bind(local_ip=local_ip, local_port=config.MB_TCP_PORT)
                     print('Modbus TCP started on {}:{}'.format(local_ip, config.MB_TCP_PORT))
@@ -201,7 +177,7 @@ def _process_modbus_tcp():
             _wdt.feed()
 
         except Exception as e:
-            print("Modbus TCP process error: {}".format(e))
+            print("Modbus TCP process error:", e)
             time.sleep(1)
 
 # main =========================================================================
@@ -214,6 +190,8 @@ try:
     config_AP_ON_TIME_SEC = config.AP_ON_TIME_SEC
     config_FTP_USER = config.FTP_USER
     config_FTP_PASSWORD = config.FTP_PASSWORD
+    config_WEB_USER = config.WEB_USER
+    config_WEB_PASSWORD = config.WEB_PASSWORD
     config_ERROR = False
 except Exception:
     print('Configuration error - Starting with default configuration')
@@ -223,22 +201,28 @@ except Exception:
     config_AP_ON_TIME_SEC = 600
     config_FTP_USER = 'exo'
     config_FTP_PASSWORD = 'sense'
+    config_WEB_USER = 'exo'
+    config_WEB_PASSWORD = 'sense'
     config_ERROR = True
 
 try:
+    from exosense import ExoSense
+    from modbus import ModbusRTU
+    from modbus import ModbusTCP
+    from webserver import WebServer
+
     if config_AP_ON_TIME_SEC < 120:
         config_AP_ON_TIME_SEC = 120
 
-    server = Server()
-    server.deinit()
-    server.init(login=(config_FTP_USER, config_FTP_PASSWORD))
+    _ftp = Server()
+    _ftp.deinit()
+    _ftp.init(login=(config_FTP_USER, config_FTP_PASSWORD))
 
-    _config_check_alarm = None
-    _config_stat = _get_config_stat()
+    _web = WebServer(config_WEB_USER, config_WEB_PASSWORD)
 
     if not config_ERROR and (config.MB_RTU_ADDRESS > 0 or len(config.MB_TCP_IP) > 0):
         _exo = ExoSense()
-        _wdt = machine.WDT(timeout=20000)
+        _wdt = WDT(timeout=20000)
         _status_ap_enabled_once = False
         _status_mb_got_request = False
 

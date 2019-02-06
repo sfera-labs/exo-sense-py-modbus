@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+<head>
+	<title>Exo Sense Py</title>
+	<style>
+	div {
+		padding: 5px
+	}
+</style>
+</head>
+
+<body>
+	<header>
+		<h2>Exo Sense Py</h2>
+		<h3>Modbus RTU/TCP</h3>
+	</header>
+	<div><a href="/config">Download current configuration</a></div>
+	<div>Upload new configuration:</div>
+	<form action="/config" method="POST" enctype="multipart/form-data">
+		<div><input type="file" name="file" id="file"></div>
+		<div><input type="submit" name="submit" value="Upload"></div>
+	</form>
+</body>
+</html>

@@ -17,6 +17,10 @@ AP_ON_TIME_SEC = 600
 # Set to 0 to disable access point mode.
 AP_ON_TIMEOUT_SEC = 300
 
+# Web server credentials
+WEB_USER = 'exo'
+WEB_PASSWORD = 'sense'
+
 # FTP server credentials
 FTP_USER = 'exo'
 FTP_PASSWORD = 'sense'
