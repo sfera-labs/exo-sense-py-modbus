@@ -27,7 +27,7 @@ FTP_PASSWORD = 'sense'
 
 # LED status when working normally
 HEARTBEAT_LED = False # LED off
-# HEARTBEAT_LED = True
+# HEARTBEAT_LED = True # LED short blue blink every few seconds
 
 # Temperature offset (°C)
 TEMP_OFFSET = 0
