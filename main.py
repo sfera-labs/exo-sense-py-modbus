@@ -2,21 +2,28 @@ import time
 import _thread
 import pycom
 import uos
+import sys
 from machine import WDT
+
+def _print_ex(msg, e):
+    print('-- [Exception] --------------------')
+    print(msg)
+    sys.print_exception(e)
+    print('-----------------------------------')
 
 def _disable_web_server():
     try:
         _web.stop()
         print('Web server disabled')
     except Exception as e:
-        print('Exception in _disable_web_server():', e)
+        _print_ex('_disable_web_server() error', e)
 
 def _enable_web_server():
     try:
         _web.start()
         print('Web server enabled')
     except Exception as e:
-        print('Exception in _enable_web_server():', e)
+        _print_ex('_enable_web_server() error', e)
 
 def _enable_ap(feed_wdt=False):
     try:
@@ -50,7 +57,7 @@ def _enable_ap(feed_wdt=False):
         else:
             pycom.rgbled(0x00ff00)
     except Exception as e:
-        print('Exception in _enable_ap():', e)
+        _print_ex('_enable_ap() error', e)
         raise e
 
 def _connect_wifi():
@@ -104,7 +111,7 @@ def _connect_wifi():
 
         return True
     except Exception as e:
-        print('Exception in _connect_wifi():', e)
+        _print_ex('_connect_wifi() error', e)
         raise e
 
 def _sample_sound():
@@ -113,7 +120,7 @@ def _sample_sound():
             _exo.sound.sample()
             time.sleep_ms(1)
         except Exception as e:
-            print("Sound sample error: {}".format(e))
+            _print_ex('Sound sample error', e)
             time.sleep(1)
 
 def _read_thpa():
@@ -121,12 +128,12 @@ def _read_thpa():
         try:
             _exo.thpa.read()
         except Exception as e:
-            print("THPA read error: {}".format(e))
+            _print_ex('THPA read error', e)
     while True:
         try:
             _exo.thpa.read()
         except Exception as e:
-            print("THPA read error: {}".format(e))
+            _print_ex('THPA read error', e)
         time.sleep(5)
 
 def _process_modbus_rtu():
@@ -159,7 +166,7 @@ def _process_modbus_rtu():
                 _thread.start_new_thread(_enable_ap, ())
             _wdt.feed()
         except Exception as e:
-            print("Modbus RTU process error:", e)
+            _print_ex('Modbus RTU process error', e)
             time.sleep(1)
 
 def _process_modbus_tcp():
@@ -185,7 +192,7 @@ def _process_modbus_tcp():
             _wdt.feed()
 
         except Exception as e:
-            print("Modbus TCP process error:", e)
+            _print_ex('Modbus TCP process error', e)
             time.sleep(1)
 
 # main =========================================================================
@@ -239,7 +246,7 @@ try:
                 _exo.sound.init()
                 break
             except Exception as e:
-                print("Sound init error: {}".format(e))
+                _print_ex('Sound init error', e)
                 time.sleep(1)
 
         while True:
@@ -247,7 +254,7 @@ try:
                 _exo.light.init()
                 break
             except Exception as e:
-                print("Light init error: {}".format(e))
+                _print_ex('Light init error', e)
                 time.sleep(1)
 
         while True:
@@ -257,7 +264,7 @@ try:
                 )
                 break
             except Exception as e:
-                print("Light init error: {}".format(e))
+                _print_ex('THPS init error', e)
                 time.sleep(1)
 
         _thread.start_new_thread(_sample_sound, ())
@@ -269,7 +276,7 @@ try:
             _process_modbus_tcp()
 
 except Exception as e:
-    print('Exception in main:', e)
+    _print_ex('Main error', e)
 
 _enable_ap()
 print('Waiting for reboot...')
