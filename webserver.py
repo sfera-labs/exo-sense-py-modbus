@@ -37,7 +37,7 @@ class WebServer:
         client_sock = None
         f = None
         try:
-            client_sock, addr = self._sock.accept()
+            client_sock, client_addr = self._sock.accept()
             client_sock.settimeout(0.3)
 
             first_line = client_sock.readline()
@@ -66,10 +66,14 @@ class WebServer:
                 user_pass = None
 
             if (not user_pass) or (user_pass[0] != self._user) or (user_pass[1] != self._password):
+                if user_pass:
+                    print('WebServer - access attempt from', client_addr)
                 client_sock.send('HTTP/1.1 401 Unauthorized\r\n')
                 client_sock.send('WWW-Authenticate: Basic realm="ExoSensePy"\r\n\r\n')
                 client_sock.close()
                 return
+
+            print('WebServer - request from', client_addr, req_method, req_path)
 
             if req_path == '/config':
                 if req_method == 'POST':
@@ -128,6 +132,10 @@ class WebServer:
                         client_sock.send('Content-Type: text/html\r\n\r\n')
                         client_sock.send('Not configured')
 
+            elif req_path == '/favicon.ico':
+                client_sock.send('HTTP/1.1 404 Not Found\r\n')
+                client_sock.send('Connection: close\r\n\r\n')
+
             else:
                 client_sock.send('HTTP/1.1 200 OK\r\n')
                 client_sock.send('Connection: close\r\n')
@@ -139,10 +147,10 @@ class WebServer:
 
         except Exception as e:
             if self._run:
-                print("WebServer process error:", e)
+                print("WebServer - process error:", e)
                 sys.print_exception(e)
             else:
-                print("WebServer process stopped")
+                print("WebServer - process stopped")
 
         try:
             f.close()

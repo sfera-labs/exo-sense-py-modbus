@@ -21,6 +21,7 @@ def _enable_web_server():
 def _enable_ap(feed_wdt=False):
     try:
         global _status_ap_enabled_once
+        pycom.heartbeat(False)
         pycom.rgbled(0xffff00)
         wlan.deinit()
         time.sleep(1)
@@ -45,6 +46,7 @@ def _enable_ap(feed_wdt=False):
 
         if _status_mb_got_request:
             pycom.rgbled(0x000000)
+            pycom.heartbeat(config.HEARTBEAT_LED)
         else:
             pycom.rgbled(0x00ff00)
     except Exception as e:
@@ -53,6 +55,7 @@ def _enable_ap(feed_wdt=False):
 
 def _connect_wifi():
     try:
+        pycom.heartbeat(False)
         pycom.rgbled(0xff0030)
         wlan.deinit()
         time.sleep(1)
@@ -95,6 +98,7 @@ def _connect_wifi():
 
         if _status_mb_got_request:
             pycom.rgbled(0x000000)
+            pycom.heartbeat(config.HEARTBEAT_LED)
         else:
             pycom.rgbled(0x00ff00)
 
@@ -139,6 +143,7 @@ def _process_modbus_rtu():
         ctrl_pin=_exo.PIN_TX_EN
     )
     start_ms = time.ticks_ms()
+    pycom.heartbeat(False)
     pycom.rgbled(0x00ff00)
     print('Modbus RTU started - addr:', config.MB_RTU_ADDRESS)
     while True:
@@ -146,6 +151,7 @@ def _process_modbus_rtu():
             if modbusrtu.process():
                 if not _status_mb_got_request:
                     pycom.rgbled(0x000000)
+                    pycom.heartbeat(config.HEARTBEAT_LED)
                     _status_mb_got_request = True
             elif not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
                 and not _status_ap_enabled_once \
@@ -159,6 +165,7 @@ def _process_modbus_rtu():
 def _process_modbus_tcp():
     global _status_mb_got_request
     modbustcp = ModbusTCP(exo=_exo)
+    pycom.heartbeat(False)
     pycom.rgbled(0x00ff00)
     while True:
         try:
@@ -166,6 +173,7 @@ def _process_modbus_tcp():
                 if modbustcp.process():
                     if not _status_mb_got_request:
                         pycom.rgbled(0x000000)
+                        pycom.heartbeat(config.HEARTBEAT_LED)
                         _status_mb_got_request = True
             else:
                 if _connect_wifi():
@@ -206,17 +214,17 @@ except Exception:
     config_ERROR = True
 
 try:
-    from exosense import ExoSense
-    from modbus import ModbusRTU
-    from modbus import ModbusTCP
-    from webserver import WebServer
-
     if config_AP_ON_TIME_SEC < 120:
         config_AP_ON_TIME_SEC = 120
 
     _ftp = Server()
     _ftp.deinit()
     _ftp.init(login=(config_FTP_USER, config_FTP_PASSWORD))
+
+    from exosense import ExoSense
+    from modbus import ModbusRTU
+    from modbus import ModbusTCP
+    from webserver import WebServer
 
     _web = WebServer(config_WEB_USER, config_WEB_PASSWORD)
 

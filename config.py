@@ -25,6 +25,10 @@ WEB_PASSWORD = 'sense'
 FTP_USER = 'exo'
 FTP_PASSWORD = 'sense'
 
+# LED status when working normally
+HEARTBEAT_LED = False # LED off
+# HEARTBEAT_LED = True
+
 # Temperature offset (°C)
 TEMP_OFFSET = 0
 
