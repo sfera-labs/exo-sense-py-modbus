@@ -4,12 +4,15 @@ import pycom
 import uos
 import sys
 from machine import WDT
+import micropython
 
 def _print_ex(msg, e):
-    print('-- [Exception] --------------------')
+    print('== [Exception] ====================')
     print(msg)
     sys.print_exception(e)
-    print('-----------------------------------')
+    print('---------------------')
+    micropython.mem_info()
+    print('===================================')
 
 def _disable_web_server():
     try:
@@ -25,7 +28,7 @@ def _enable_web_server():
     except Exception as e:
         _print_ex('_enable_web_server() error', e)
 
-def _enable_ap(feed_wdt=False):
+def _enable_ap():
     try:
         global _status_ap_enabled_once
         pycom.heartbeat(False)
@@ -42,8 +45,10 @@ def _enable_ap(feed_wdt=False):
         start_ms = time.ticks_ms()
         while time.ticks_diff(start_ms, time.ticks_ms()) < config_AP_ON_TIME_SEC * 1000:
             print('.', end='')
-            if feed_wdt:
+            try:
                 _wdt.feed()
+            except Exception:
+                pass
             time.sleep(1)
 
         wlan.deinit()
@@ -93,7 +98,7 @@ def _connect_wifi():
                 and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
                 print('WiFi connection timeout')
                 wlan.disconnect()
-                _enable_ap(True)
+                _enable_ap()
                 return False
             blink = not blink
             pycom.rgbled(0xff0030 if blink else 0x000000)

@@ -22,7 +22,7 @@ class WebServer:
         self.stop()
         self._sock = socket.socket()
         self._sock.bind(('0.0.0.0', 80))
-        self._sock.listen(5)
+        self._sock.listen()
         _thread.start_new_thread(self._process, ())
 
     def _split(self, line, split_char):
@@ -104,18 +104,13 @@ class WebServer:
 
                     client_sock.readall()
 
-                    client_sock.send('HTTP/1.1 200 OK\r\n')
-                    client_sock.send('Connection: close\r\n')
+                    client_sock.send('HTTP/1.1 303 See Other\r\n')
+                    client_sock.send('Location: /?state={}\r\n'.format(state))
                     client_sock.send('Content-Type: text/html\r\n\r\n')
                     if state == 5:
-                        client_sock.send('Uploaded - Restarting...')
                         print('Config uploaded - restarting in 2 sec...')
                         time.sleep(2)
                         machine.reset()
-                    elif state == 0:
-                        client_sock.send('Select configuration file')
-                    else:
-                        client_sock.send('Error ({})'.format(state))
 
                 else:
                     client_sock.send('HTTP/1.1 200 OK\r\n')
