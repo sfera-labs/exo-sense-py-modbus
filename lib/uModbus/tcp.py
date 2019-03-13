@@ -157,66 +157,71 @@ class TCPServer:
         modbus_pdu = functions.exception_response(function_code, exception_code)
         self._send(modbus_pdu, slave_addr)
 
+    def _accept_request(self, accept_timeout, unit_addr_list):
+        self._sock.settimeout(accept_timeout)
+        new_client_sock = None
+        try:
+            new_client_sock, client_address = self._sock.accept()
+        except OSError as e:
+            if e.args[0] != 11: # 11 = timeout expired
+                raise e
+
+        if new_client_sock != None:
+            if self._client_sock != None:
+                self._client_sock.close()
+            self._client_sock = new_client_sock
+            self._client_sock.settimeout(0) # recv() timeout
+
+        if self._client_sock != None:
+            try:
+                req = self._client_sock.recv(128)
+                if len(req) == 0:
+                    return None
+
+                req_header_no_uid = req[:Const.MBAP_HDR_LENGTH - 1]
+                self._req_tid, req_pid, req_len = struct.unpack('>HHH', req_header_no_uid)
+                req_uid_and_pdu = req[Const.MBAP_HDR_LENGTH - 1:Const.MBAP_HDR_LENGTH + req_len - 1]
+
+            except TimeoutError:
+                return None
+            except Exception as e:
+                print("Modbus request error:", e)
+                self._client_sock.close()
+                self._client_sock = None
+                return None
+
+            if (req_pid != 0):
+                print("Modbus request error: PID not 0")
+                self._client_sock.close()
+                self._client_sock = None
+                return None
+
+            if unit_addr_list != None and req_uid_and_pdu[0] not in unit_addr_list:
+                return None
+
+            try:
+                return Request(self, req_uid_and_pdu)
+            except ModbusException as e:
+                self.send_exception_response(req[0], e.function_code, e.exception_code)
+                return None
+
     def get_request(self, unit_addr_list=None, timeout=None):
         if self._sock == None:
             raise Exception('Modbus TCP server not bound')
 
-        start_ms = time.ticks_ms()
-        while True:
-            elapsed = time.ticks_diff(start_ms, time.ticks_ms())
-            if elapsed > timeout:
-                return None
-
-            if self._client_sock == None:
-                accept_timeout = None if timeout == None else (timeout - elapsed) / 1000
-            else:
-                accept_timeout = 0
-            self._sock.settimeout(accept_timeout)
-
-            new_client_sock = None
-            try:
-                new_client_sock, client_address = self._sock.accept()
-            except OSError as e:
-                if e.args[0] != 11: # 11 = timeout expired
-                    raise e
-
-            if new_client_sock != None:
-                if self._client_sock != None:
-                    self._client_sock.close()
-                self._client_sock = new_client_sock
-                self._client_sock.settimeout(0.2) # recv() timeout
-
-            if self._client_sock != None:
-                try:
-                    req = self._client_sock.recv(256)
-                    if len(req) == 0:
-                        # connection terminated
-                        self._client_sock.close()
-                        self._client_sock = None
-                        continue
-
-                    req_header_no_uid = req[:Const.MBAP_HDR_LENGTH - 1]
-                    self._req_tid, req_pid, req_len = struct.unpack('>HHH', req_header_no_uid)
-                    req_uid_and_pdu = req[Const.MBAP_HDR_LENGTH - 1:Const.MBAP_HDR_LENGTH + req_len - 1]
-
-                except TimeoutError:
-                    continue
-                except Exception as e:
-                    print("Modbus request error:", e)
-                    self._client_sock.close()
-                    self._client_sock = None
-                    continue
-
-                if (req_pid != 0):
-                    print("Modbus request error: PID not 0")
-                    self._client_sock.close()
-                    self._client_sock = None
-                    continue
-
-                if unit_addr_list != None and req_uid_and_pdu[0] not in unit_addr_list:
-                    continue
-
-                try:
-                    return Request(self, req_uid_and_pdu)
-                except ModbusException as e:
-                    self.send_exception_response(req[0], e.function_code, e.exception_code)
+        if timeout > 0:
+            start_ms = time.ticks_ms()
+            elapsed = 0
+            while True:
+                if self._client_sock == None:
+                    accept_timeout = None if timeout == None else (timeout - elapsed) / 1000
+                else:
+                    accept_timeout = 0
+                req = self._accept_request(accept_timeout, unit_addr_list)
+                if req:
+                    return req
+                elapsed = time.ticks_diff(start_ms, time.ticks_ms())
+                if elapsed > timeout:
+                    return None
+        else:
+            return self._accept_request(0, unit_addr_list)
