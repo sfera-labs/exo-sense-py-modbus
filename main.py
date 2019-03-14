@@ -1,10 +1,12 @@
 import time
-import _thread
 import pycom
 import uos
 import sys
+import _thread
 from machine import WDT
 import micropython
+
+_ap_enabled = False
 
 def _print_ex(msg, e):
     print('== [Exception] ====================')
@@ -14,23 +16,12 @@ def _print_ex(msg, e):
     micropython.mem_info()
     print('===================================')
 
-def _disable_web_server():
-    try:
-        _web.stop()
-        print('Web server disabled')
-    except Exception as e:
-        _print_ex('_disable_web_server() error', e)
-
-def _enable_web_server():
-    try:
-        _web.start()
-        print('Web server enabled')
-    except Exception as e:
-        _print_ex('_enable_web_server() error', e)
-
 def _enable_ap():
+    global _ap_enabled
     try:
-        global _status_ap_enabled_once
+        if _ap_enabled:
+            return
+        _ap_enabled = True
         pycom.heartbeat(False)
         pycom.rgbled(0xffff00)
         wlan.deinit()
@@ -38,34 +29,40 @@ def _enable_ap():
         wlan.init(mode=WLAN.AP, ssid=config_AP_SSID, auth=(WLAN.WPA2, config_AP_PASSWORD), channel=config_AP_CHANNEL, antenna=WLAN.INT_ANT)
         print("AP '{}' on for {} secs".format(config_AP_SSID, config_AP_ON_TIME_SEC))
         pycom.rgbled(0x0000ff)
-        _status_ap_enabled_once = True
 
-        _enable_web_server()
+        _web.start()
 
         start_ms = time.ticks_ms()
         while time.ticks_diff(start_ms, time.ticks_ms()) < config_AP_ON_TIME_SEC * 1000:
-            print('.', end='')
             try:
                 _wdt.feed()
             except Exception:
                 pass
-            time.sleep(1)
+            _web.process(5)
+
+        _web.stop()
 
         wlan.deinit()
         print('AP off')
-
-        _disable_web_server()
 
         if _status_mb_got_request:
             pycom.rgbled(0x000000)
             pycom.heartbeat(config.HEARTBEAT_LED)
         else:
             pycom.rgbled(0x00ff00)
+
+        _ap_enabled = False
     except Exception as e:
+        try:
+            wlan.deinit()
+        except Exception as e:
+            pass
+        _ap_enabled = False
         _print_ex('_enable_ap() error', e)
         raise e
 
 def _connect_wifi():
+    global _status_ap_enabled_once
     try:
         pycom.heartbeat(False)
         pycom.rgbled(0xff0030)
@@ -98,6 +95,7 @@ def _connect_wifi():
                 and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
                 print('WiFi connection timeout')
                 wlan.disconnect()
+                _status_ap_enabled_once = True
                 _enable_ap()
                 return False
             blink = not blink
@@ -119,86 +117,35 @@ def _connect_wifi():
         _print_ex('_connect_wifi() error', e)
         raise e
 
-def _sample_sound():
-    while True:
-        try:
-            _exo.sound.sample()
-            time.sleep_ms(1)
-        except Exception as e:
-            _print_ex('Sound sample error', e)
-            time.sleep(1)
-
-def _read_thpa():
-    for i in range(10):
-        try:
-            _exo.thpa.read()
-        except Exception as e:
-            _print_ex('THPA read error', e)
-    while True:
-        try:
-            _exo.thpa.read()
-        except Exception as e:
-            _print_ex('THPA read error', e)
-        time.sleep(5)
-
-def _process_modbus_rtu():
+def _modbus_rtu_process():
     global _status_mb_got_request
-    modbusrtu = ModbusRTU(
-        exo=_exo,
-        enable_ap_func=_enable_ap,
-        addr=config.MB_RTU_ADDRESS,
-        baudrate=config.MB_RTU_BAUDRATE,
-        data_bits=config.MB_RTU_DATA_BITS,
-        stop_bits=config.MB_RTU_STOP_BITS,
-        parity=UART.ODD if config.MB_RTU_PARITY == 2 else None if config.MB_RTU_PARITY == 3 else UART.EVEN,
-        pins=(_exo.PIN_TX, _exo.PIN_RX),
-        ctrl_pin=_exo.PIN_TX_EN
-    )
-    start_ms = time.ticks_ms()
-    pycom.heartbeat(False)
-    pycom.rgbled(0x00ff00)
-    print('Modbus RTU started - addr:', config.MB_RTU_ADDRESS)
-    while True:
-        try:
-            if modbusrtu.process():
-                if not _status_mb_got_request:
-                    pycom.rgbled(0x000000)
-                    pycom.heartbeat(config.HEARTBEAT_LED)
-                    _status_mb_got_request = True
-            elif not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
-                and not _status_ap_enabled_once \
-                and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
-                _thread.start_new_thread(_enable_ap, ())
-            _wdt.feed()
-        except Exception as e:
-            _print_ex('Modbus RTU process error', e)
-            time.sleep(1)
+    global _status_ap_enabled_once
+    if _modbus.process():
+        if not _status_mb_got_request:
+            pycom.rgbled(0x000000)
+            pycom.heartbeat(config.HEARTBEAT_LED)
+            _status_mb_got_request = True
+    elif not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
+        and not _status_ap_enabled_once \
+        and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
+        _status_ap_enabled_once = True
+        _thread.start_new_thread(_enable_ap, ())
 
-def _process_modbus_tcp():
+def _modbus_tcp_process():
     global _status_mb_got_request
-    modbustcp = ModbusTCP(exo=_exo)
-    pycom.heartbeat(False)
-    pycom.rgbled(0x00ff00)
-    while True:
-        try:
-            if wlan.isconnected():
-                if modbustcp.process():
-                    if not _status_mb_got_request:
-                        pycom.rgbled(0x000000)
-                        pycom.heartbeat(config.HEARTBEAT_LED)
-                        _status_mb_got_request = True
-            else:
-                if _connect_wifi():
-                    _enable_web_server()
-                    local_ip = wlan.ifconfig()[0]
-                    modbustcp.bind(local_ip=local_ip, local_port=config.MB_TCP_PORT)
-                    print('Modbus TCP started on {}:{}'.format(local_ip, config.MB_TCP_PORT))
-
-            _wdt.feed()
-
-        except Exception as e:
-            _print_ex('Modbus TCP process error', e)
-            time.sleep(1)
+    if wlan.isconnected():
+        if _modbus.process():
+            if not _status_mb_got_request:
+                pycom.rgbled(0x000000)
+                pycom.heartbeat(config.HEARTBEAT_LED)
+                _status_mb_got_request = True
+        _web.process(0)
+    else:
+        if _connect_wifi():
+            _web.start()
+            local_ip = wlan.ifconfig()[0]
+            _modbus.bind(local_ip=local_ip, local_port=config.MB_TCP_PORT)
+            print('Modbus TCP started on {}:{}'.format(local_ip, config.MB_TCP_PORT))
 
 # main =========================================================================
 
@@ -269,16 +216,51 @@ try:
                 )
                 break
             except Exception as e:
-                _print_ex('THPS init error', e)
+                _print_ex('THPA init error', e)
                 time.sleep(1)
 
-        _thread.start_new_thread(_sample_sound, ())
-        _thread.start_new_thread(_read_thpa, ())
+        for i in range(10):
+            try:
+                _exo.thpa.read()
+            except Exception as e:
+                _print_ex('THPA read error', e)
 
         if config.MB_RTU_ADDRESS > 0:
-            _process_modbus_rtu()
+            _modbus = ModbusRTU(
+                exo=_exo,
+                enable_ap_func=_enable_ap,
+                addr=config.MB_RTU_ADDRESS,
+                baudrate=config.MB_RTU_BAUDRATE,
+                data_bits=config.MB_RTU_DATA_BITS,
+                stop_bits=config.MB_RTU_STOP_BITS,
+                parity=UART.ODD if config.MB_RTU_PARITY == 2 else None if config.MB_RTU_PARITY == 3 else UART.EVEN,
+                pins=(_exo.PIN_TX, _exo.PIN_RX),
+                ctrl_pin=_exo.PIN_TX_EN
+            )
+            _modbus_process = _modbus_rtu_process
+            print('Modbus RTU started - addr:', config.MB_RTU_ADDRESS)
         else:
-            _process_modbus_tcp()
+            _modbus = ModbusTCP(exo=_exo)
+            _modbus_process = _modbus_tcp_process
+
+        pycom.heartbeat(False)
+        pycom.rgbled(0x00ff00)
+
+        start_ms = time.ticks_ms()
+        last_thpa_read = start_ms
+
+        while True:
+            try:
+                _exo.sound.sample()
+                now = time.ticks_ms()
+                if time.ticks_diff(last_thpa_read, now) >= 5000:
+                    _exo.thpa.read()
+                    last_thpa_read = now
+                _modbus_process()
+                _wdt.feed()
+            except Exception as e:
+                _print_ex('Modbus process error', e)
+                time.sleep(1)
 
 except Exception as e:
     _print_ex('Main error', e)
@@ -286,6 +268,10 @@ except Exception as e:
 _enable_ap()
 print('Waiting for reboot...')
 while True:
+    try:
+        _wdt.feed()
+    except Exception:
+        pass
     pycom.rgbled(0x000000)
     time.sleep(1)
     pycom.rgbled(0xff0000)

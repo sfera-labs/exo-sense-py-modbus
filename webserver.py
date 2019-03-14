@@ -1,7 +1,6 @@
 import uos
 import sys
 import socket
-import _thread
 import time
 import machine
 import ubinascii
@@ -14,30 +13,38 @@ class WebServer:
         self._password = password
 
     def stop(self):
-        self._run = False
-        if self._sock:
+        try:
+            self._run = False
             self._sock.close()
+        except Exception:
+            pass
+        print('Web server disabled')
 
     def start(self):
-        self.stop()
-        self._sock = socket.socket()
-        self._sock.bind(('0.0.0.0', 80))
-        self._sock.listen()
-        _thread.start_new_thread(self._process, ())
+        try:
+            self.stop()
+            self._run = True
+            self._sock = socket.socket()
+            self._sock.bind(('0.0.0.0', 80))
+            self._sock.listen()
+            print('Web server enabled')
+        except Exception:
+            pass
 
     def _split(self, line, split_char):
         return line.decode().strip().split(split_char)
 
-    def _process(self):
-        self._run = True
-        while self._run:
-            self._accept_request()
-
-    def _accept_request(self):
+    def process(self, accept_timeout):
         client_sock = None
         f = None
         try:
+            self._sock.settimeout(accept_timeout)
             client_sock, client_addr = self._sock.accept()
+            if not client_sock:
+                return
+
+            print('WebServer - connection from', client_addr)
+
             client_sock.settimeout(0.3)
 
             first_line = client_sock.readline()
@@ -139,6 +146,11 @@ class WebServer:
                 client_sock.send('Content-Length: {}\r\n\r\n'.format(stat[6]))
                 f = open('index.html', 'rb')
                 client_sock.send(f.read())
+
+        except OSError as e:
+            if e.args[0] != 11: # 11 = timeout expired
+                print("WebServer - OSError:", e)
+                sys.print_exception(e)
 
         except Exception as e:
             if self._run:

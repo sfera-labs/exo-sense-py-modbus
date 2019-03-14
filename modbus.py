@@ -13,7 +13,7 @@ class Modbus:
         self._addr_list = addr_list
 
     def process(self):
-        request = self._itf.get_request(unit_addr_list=self._addr_list, timeout=5000)
+        request = self._itf.get_request(unit_addr_list=self._addr_list, timeout=0)
         if request == None:
             return False
         self._process_req(request)
