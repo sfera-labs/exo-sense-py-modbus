@@ -3,6 +3,7 @@ import pycom
 import uos
 import sys
 import _thread
+import machine
 from machine import WDT
 import micropython
 
@@ -16,7 +17,7 @@ def _print_ex(msg, e):
     micropython.mem_info()
     print('===================================')
 
-def _enable_ap():
+def _enable_ap(reboot_on_disable=True):
     global _ap_enabled
     try:
         if _ap_enabled:
@@ -30,6 +31,10 @@ def _enable_ap():
         print("AP '{}' on for {} secs".format(config_AP_SSID, config_AP_ON_TIME_SEC))
         pycom.rgbled(0x0000ff)
 
+        if config_FTP_USER and config_FTP_PASSWORD:
+            _ftp.deinit()
+            _ftp.init(login=(config_FTP_USER, config_FTP_PASSWORD))
+
         _web.start()
 
         start_ms = time.ticks_ms()
@@ -41,6 +46,8 @@ def _enable_ap():
             _web.process(5)
 
         _web.stop()
+
+        _ftp.deinit()
 
         wlan.deinit()
         print('AP off')
@@ -60,6 +67,9 @@ def _enable_ap():
         _ap_enabled = False
         _print_ex('_enable_ap() error', e)
         raise e
+
+    if reboot_on_disable:
+        machine.reset()
 
 def _connect_wifi():
     global _status_ap_enabled_once
@@ -96,7 +106,7 @@ def _connect_wifi():
                 print('WiFi connection timeout')
                 wlan.disconnect()
                 _status_ap_enabled_once = True
-                _enable_ap()
+                _enable_ap(reboot_on_disable=False)
                 return False
             blink = not blink
             pycom.rgbled(0xff0030 if blink else 0x000000)
@@ -122,14 +132,15 @@ def _modbus_rtu_process():
     global _status_ap_enabled_once
     if _modbus.process():
         if not _status_mb_got_request:
-            pycom.rgbled(0x000000)
-            pycom.heartbeat(config.HEARTBEAT_LED)
             _status_mb_got_request = True
+            if not _ap_enabled:
+                pycom.rgbled(0x000000)
+                pycom.heartbeat(config.HEARTBEAT_LED)
     elif not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
         and not _status_ap_enabled_once \
         and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
         _status_ap_enabled_once = True
-        _thread.start_new_thread(_enable_ap, ())
+        _thread.start_new_thread(_enable_ap, (False,))
 
 def _modbus_tcp_process():
     global _status_mb_got_request
@@ -178,7 +189,6 @@ try:
 
     _ftp = Server()
     _ftp.deinit()
-    _ftp.init(login=(config_FTP_USER, config_FTP_PASSWORD))
 
     from exosense import ExoSense
     from modbus import ModbusRTU
@@ -265,7 +275,7 @@ try:
 except Exception as e:
     _print_ex('Main error', e)
 
-_enable_ap()
+_enable_ap(reboot_on_disable=False)
 print('Waiting for reboot...')
 while True:
     try:
