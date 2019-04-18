@@ -198,17 +198,42 @@ try:
     _web = WebServer(config_WEB_USER, config_WEB_PASSWORD)
 
     if not config_ERROR and (config.MB_RTU_ADDRESS > 0 or len(config.MB_TCP_IP) > 0):
-        _wdt = WDT(timeout=20000)
         _exo = ExoSense()
+        _wdt = WDT(timeout=20000)
         _status_ap_enabled_once = False
         _status_mb_got_request = False
 
-        _exo.sound.init()
-        _exo.light.init()
-        _exo.thpa.init(temp_offset=(config.TEMP_OFFSET - 5))
+        while True:
+            try:
+                _exo.sound.init()
+                break
+            except Exception as e:
+                _print_ex('Sound init error', e)
+                time.sleep(1)
+
+        while True:
+            try:
+                _exo.light.init()
+                break
+            except Exception as e:
+                _print_ex('Light init error', e)
+                time.sleep(1)
+
+        while True:
+            try:
+                _exo.thpa.init(
+                    temp_offset=(config.TEMP_OFFSET - 5)
+                )
+                break
+            except Exception as e:
+                _print_ex('THPA init error', e)
+                time.sleep(1)
 
         for i in range(10):
-            _exo.thpa.read()
+            try:
+                _exo.thpa.read()
+            except Exception as e:
+                _print_ex('THPA read error', e)
 
         if config.MB_RTU_ADDRESS > 0:
             _modbus = ModbusRTU(
@@ -235,17 +260,20 @@ try:
         last_thpa_read = start_ms
 
         while True:
-            _exo.sound.sample()
-            now = time.ticks_ms()
-            if time.ticks_diff(last_thpa_read, now) >= 5000:
-                _exo.thpa.read()
-                last_thpa_read = now
-            _modbus_process()
-            _wdt.feed()
+            try:
+                _exo.sound.sample()
+                now = time.ticks_ms()
+                if time.ticks_diff(last_thpa_read, now) >= 5000:
+                    _exo.thpa.read()
+                    last_thpa_read = now
+                _modbus_process()
+                _wdt.feed()
+            except Exception as e:
+                _print_ex('Modbus process error', e)
+                time.sleep(1)
 
 except Exception as e:
     _print_ex('Main error', e)
-    machine.reset()
 
 _enable_ap(reboot_on_disable=False)
 print('Waiting for reboot...')
