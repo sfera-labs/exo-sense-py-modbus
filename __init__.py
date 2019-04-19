@@ -95,27 +95,30 @@ class THPA:
         self._humidity = None
         self._pressure = None
         self._gas_resistance = None
+        self._temp_offset = 0
+        self._elevation = 0
 
     def init(self, humidity_oversample=thpa_const.OS_2X,
             pressure_oversample=thpa_const.OS_4X, temperature_oversample=thpa_const.OS_8X,
             filter=thpa_const.FILTER_SIZE_3, temp_offset=0, gas_heater_temperature=320,
-            gas_heater_duration=150):
+            gas_heater_duration=150, elevation=0):
         self._bme = bme680.BME680(i2c_addr=self._addr, i2c_device=self._exo._getI2C())
 
         self._bme.set_humidity_oversample(humidity_oversample)
         self._bme.set_pressure_oversample(pressure_oversample)
         self._bme.set_temperature_oversample(temperature_oversample)
         self._bme.set_filter(filter)
-        self._bme.set_temp_offset(temp_offset)
         self._bme.set_gas_heater_temperature(gas_heater_temperature)
         self._bme.set_gas_heater_duration(gas_heater_duration)
         self._bme.select_gas_heater_profile(0)
+        self._temp_offset = temp_offset
+        self._elevation = elevation
 
     def read(self):
         if self._bme.get_sensor_data():
-            self._temperature = self._bme.data.temperature
-            self._humidity = self._bme.data.humidity
-            self._pressure = self._bme.data.pressure
+            self._temperature = self._bme.data.temperature + self._temp_offset
+            self._humidity = self._bme.data.humidity / (10 ** (0.032 * self._temp_offset))
+            self._pressure = self._bme.data.pressure / math.exp(-self._elevation / 8400)
             if self._bme.data.heat_stable:
                 self._gas_resistance = self._bme.data.gas_resistance
 
