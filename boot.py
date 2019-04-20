@@ -13,7 +13,7 @@ pycom.heartbeat(False)
 uart = UART(0, 115200)
 os.dupterm(uart)
 
-print('=== Exo Sense Py - Modbus RTU/TCP - v1.0.0 ===')
+print('=== Exo Sense Py - Modbus RTU/TCP - v2.0.0 ===')
 
 wlan = WLAN()
 wlan.deinit()

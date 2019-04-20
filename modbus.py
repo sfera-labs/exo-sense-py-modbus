@@ -91,32 +91,40 @@ class Modbus:
                 request.send_exception(ModbusConst.ILLEGAL_DATA_ADDRESS)
 
         elif request.function == ModbusConst.READ_INPUT_REGISTER:
-            if request.register_addr == 301:
-                request.send_response([int(self._exo.thpa.temperature() * 10)], signed=True)
-            elif request.register_addr == 401:
-                request.send_response([int(self._exo.thpa.humidity() * 10)], signed=False)
-            elif request.register_addr == 501:
-                request.send_response([int(self._exo.thpa.pressure() * 10)], signed=False)
-            elif request.register_addr == 601:
-                request.send_response([int(self._exo.thpa.gas_resistance() / 1000)], signed=False)
-            elif request.register_addr == 701:
-                request.send_response([int(self._exo.light.lux() * 10)], signed=False)
-            elif request.register_addr >= 801 and request.register_addr <= 802:
+            if request.register_addr >= 301 and request.register_addr <= 307:
                 vals = []
+                signed = []
                 for i in range(request.register_addr, request.register_addr + request.quantity):
-                    if i == 801:
+                    if i == 301:
+                        vals.append(int(self._exo.thpa.temperature() * 10))
+                        signed.append(True)
+                    elif i == 302:
+                        vals.append(int(self._exo.thpa.humidity() * 10))
+                        signed.append(False)
+                    elif i == 303:
+                        vals.append(int(self._exo.thpa.pressure() * 10))
+                        signed.append(False)
+                    elif i == 304:
+                        vals.append(int(self._exo.thpa.gas_resistance() / 1000))
+                        signed.append(False)
+                    elif i == 305:
+                        vals.append(int(self._exo.light.lux() * 10))
+                        signed.append(False)
+                    elif i == 306:
                         vals.append(self._exo.sound.avg())
-                    elif i == 802:
+                        signed.append(False)
+                    elif i == 307:
                         vals.append(self._exo.sound.peak())
+                        signed.append(False)
                     else:
                         request.send_exception(ModbusConst.ILLEGAL_DATA_ADDRESS)
                         break
-                request.send_response(vals, signed=False)
+                request.send_response(vals, signed=signed)
             else:
                 request.send_exception(ModbusConst.ILLEGAL_DATA_ADDRESS)
 
         elif request.function == ModbusConst.WRITE_SINGLE_REGISTER:
-            if request.register_addr == 901:
+            if request.register_addr == 401:
                 val = request.data_as_registers(signed=False)[0]
                 _thread.start_new_thread(self._beep, (val,))
                 request.send_response()

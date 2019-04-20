@@ -182,68 +182,64 @@ except Exception:
     config_WEB_PASSWORD = 'sense'
     config_ERROR = True
 
-try:
-    if config_AP_ON_TIME_SEC < 120:
-        config_AP_ON_TIME_SEC = 120
+if config_AP_ON_TIME_SEC < 120:
+    config_AP_ON_TIME_SEC = 120
 
-    _ftp = Server()
-    _ftp.deinit()
+_ftp = Server()
+_ftp.deinit()
 
-    from exosense import ExoSense
-    from modbus import ModbusRTU
-    from modbus import ModbusTCP
-    from webserver import WebServer
+from exosense import ExoSense
+from modbus import ModbusRTU
+from modbus import ModbusTCP
+from webserver import WebServer
 
-    _web = WebServer(config_WEB_USER, config_WEB_PASSWORD)
+_web = WebServer(config_WEB_USER, config_WEB_PASSWORD)
 
-    if not config_ERROR and (config.MB_RTU_ADDRESS > 0 or len(config.MB_TCP_IP) > 0):
-        _wdt = machine.WDT(timeout=20000)
-        _status_ap_enabled_once = False
-        _status_mb_got_request = False
+if not config_ERROR and (config.MB_RTU_ADDRESS > 0 or len(config.MB_TCP_IP) > 0):
+    _wdt = machine.WDT(timeout=20000)
+    _status_ap_enabled_once = False
+    _status_mb_got_request = False
 
-        _exo = ExoSense()
-        _exo.sound.init()
-        _exo.light.init()
-        _exo.thpa.init(temp_offset=(config.TEMP_OFFSET - 5))
+    _exo = ExoSense()
+    _exo.sound.init()
+    _exo.light.init()
+    _exo.thpa.init(temp_offset=(config.TEMP_OFFSET - 5), elevation=config.ELEVATION)
 
-        for i in range(10):
+    for i in range(10):
+        _exo.thpa.read()
+
+    if config.MB_RTU_ADDRESS > 0:
+        _modbus = ModbusRTU(
+            exo=_exo,
+            enable_ap_func=_enable_ap,
+            addr=config.MB_RTU_ADDRESS,
+            baudrate=config.MB_RTU_BAUDRATE,
+            data_bits=config.MB_RTU_DATA_BITS,
+            stop_bits=config.MB_RTU_STOP_BITS,
+            parity=UART.ODD if config.MB_RTU_PARITY == 2 else None if config.MB_RTU_PARITY == 3 else UART.EVEN,
+            pins=(_exo.PIN_TX, _exo.PIN_RX),
+            ctrl_pin=_exo.PIN_TX_EN
+        )
+        _modbus_process = _modbus_rtu_process
+        print('Modbus RTU started - addr:', config.MB_RTU_ADDRESS)
+    else:
+        _modbus = ModbusTCP(exo=_exo)
+        _modbus_process = _modbus_tcp_process
+
+    pycom.heartbeat(False)
+    pycom.rgbled(0x00ff00)
+
+    start_ms = time.ticks_ms()
+    last_thpa_read = start_ms
+
+    while True:
+        _exo.sound.sample()
+        now = time.ticks_ms()
+        if time.ticks_diff(last_thpa_read, now) >= 5000:
             _exo.thpa.read()
-
-        if config.MB_RTU_ADDRESS > 0:
-            _modbus = ModbusRTU(
-                exo=_exo,
-                enable_ap_func=_enable_ap,
-                addr=config.MB_RTU_ADDRESS,
-                baudrate=config.MB_RTU_BAUDRATE,
-                data_bits=config.MB_RTU_DATA_BITS,
-                stop_bits=config.MB_RTU_STOP_BITS,
-                parity=UART.ODD if config.MB_RTU_PARITY == 2 else None if config.MB_RTU_PARITY == 3 else UART.EVEN,
-                pins=(_exo.PIN_TX, _exo.PIN_RX),
-                ctrl_pin=_exo.PIN_TX_EN
-            )
-            _modbus_process = _modbus_rtu_process
-            print('Modbus RTU started - addr:', config.MB_RTU_ADDRESS)
-        else:
-            _modbus = ModbusTCP(exo=_exo)
-            _modbus_process = _modbus_tcp_process
-
-        pycom.heartbeat(False)
-        pycom.rgbled(0x00ff00)
-
-        start_ms = time.ticks_ms()
-        last_thpa_read = start_ms
-
-        while True:
-            _exo.sound.sample()
-            now = time.ticks_ms()
-            if time.ticks_diff(last_thpa_read, now) >= 5000:
-                _exo.thpa.read()
-                last_thpa_read = now
-            _modbus_process()
-            _wdt.feed()
-
-except Exception as e:
-    _print_ex('Main error', e)
+            last_thpa_read = now
+        _modbus_process()
+        _wdt.feed()
 
 _enable_ap(reboot_on_disable=False)
 print('Waiting for reboot...')

@@ -32,6 +32,9 @@ HEARTBEAT_LED = False # LED off
 # Temperature offset (°C)
 TEMP_OFFSET = 0
 
+# Elevation from sea level in meters
+ELEVATION = 103
+
 # Modbus RTU parameters
 MB_RTU_ADDRESS = 0 # Set to 0 to disable
 MB_RTU_BAUDRATE = 19200
