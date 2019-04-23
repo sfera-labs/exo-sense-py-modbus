@@ -85,7 +85,6 @@ def response(function_code, request_register_addr, request_register_qty, request
             output_value.append(output)
 
         fmt = 'B' * len(output_value)
-
         return struct.pack('>BB' + fmt, function_code, ((len(value_list) - 1) // 8) + 1, *output_value)
 
     elif function_code in [Const.READ_HOLDING_REGISTERS, Const.READ_INPUT_REGISTER]:
@@ -94,7 +93,13 @@ def response(function_code, request_register_addr, request_register_qty, request
         if not (0x0001 <= quantity <= 0x007D):
             raise ValueError('invalid number of registers')
 
-        fmt = ('h' if signed else 'H') * quantity
+        if signed == True or signed == False:
+            fmt = ('h' if signed else 'H') * quantity
+        else:
+            fmt = ''
+            for s in signed:
+                fmt += 'h' if s else 'H'
+
         return struct.pack('>BB' + fmt, function_code, quantity * 2, *value_list)
 
     elif function_code in [Const.WRITE_SINGLE_COIL, Const.WRITE_SINGLE_REGISTER]:
