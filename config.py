@@ -22,7 +22,7 @@ WEB_USER = 'exo'
 WEB_PASSWORD = 'sense'
 
 # FTP server credentials
-FTP_USER = 'exo'
+FTP_USER = 'exo' # Set to '' to disable FTP server
 FTP_PASSWORD = 'sense'
 
 # LED status when working normally
@@ -32,15 +32,18 @@ HEARTBEAT_LED = False # LED off
 # Temperature offset (°C)
 TEMP_OFFSET = 0
 
-# Elevation from sea level in meters
+# Elevation from sea level in meters, for atmospheric pressure calculation
 ELEVATION = 103
 
+
 # Modbus RTU parameters
+
 MB_RTU_ADDRESS = 0 # Set to 0 to disable
 MB_RTU_BAUDRATE = 19200
 MB_RTU_DATA_BITS = 8
 MB_RTU_STOP_BITS = 1
 MB_RTU_PARITY = 1 # 1 = even, 2 = odd, 3 = none
+
 
 # Modbus TCP parameters
 
