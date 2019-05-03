@@ -60,12 +60,17 @@ class Sound:
         if self._peak_samples > 0:
             t = time.ticks_ms()
             dt = time.ticks_diff(self._peak_ts, t)
-            val = sum(self._buff[-self._peak_samples:])/self._peak_samples
-            self._peak_ret = self._peak_true * math.exp(-dt / self._peak_return_time)
-            if (val > self._peak_ret):
+            val = sum(self._buff[-self._peak_samples:]) / self._peak_samples
+            if dt < 0:
                 self._peak_ret = val
                 self._peak_true = val
                 self._peak_ts = t
+            else:
+                self._peak_ret = self._peak_true * math.exp(-dt / self._peak_return_time)
+                if (val > self._peak_ret):
+                    self._peak_ret = val
+                    self._peak_true = val
+                    self._peak_ts = t
 
     def avg(self):
         return int(sum(self._buff[-self._avg_samples:])/self._avg_samples)
@@ -103,7 +108,6 @@ class THPA:
             filter=thpa_const.FILTER_SIZE_3, temp_offset=0, gas_heater_temperature=320,
             gas_heater_duration=150, elevation=0):
         self._bme = bme680.BME680(i2c_addr=self._addr, i2c_device=self._exo._getI2C())
-
         self._bme.set_humidity_oversample(humidity_oversample)
         self._bme.set_pressure_oversample(pressure_oversample)
         self._bme.set_temperature_oversample(temperature_oversample)
@@ -117,10 +121,15 @@ class THPA:
     def read(self):
         if self._bme.get_sensor_data():
             self._temperature = self._bme.data.temperature + self._temp_offset
-            self._humidity = self._bme.data.humidity / (10 ** (0.032 * self._temp_offset))
+            hum = self._bme.data.humidity / (10 ** (0.032 * self._temp_offset))
+            if hum > 100:
+                hum = 100
+            self._humidity = hum
             self._pressure = self._bme.data.pressure / math.exp(-self._elevation / 8400)
             if self._bme.data.heat_stable:
                 self._gas_resistance = self._bme.data.gas_resistance
+            return True
+        return False
 
     def temperature(self):
         return self._temperature
