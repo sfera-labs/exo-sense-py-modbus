@@ -32,13 +32,16 @@ class Sound:
         self._buff = None
 
     def init(self, avg_samples=100, peak_samples=10, peak_return_time=500):
+        if avg_samples < 0 or peak_samples < 0 or peak_return_time < 0:
+            raise Exception('Illegal arguments')
         self._chan = ADC().channel(pin=self._pin, attn=ADC.ATTN_11DB)
-        self._buff = [0] * (avg_samples if avg_samples > peak_samples else peak_samples)
-        self._avg_samples = avg_samples
-        self._peak_samples = peak_samples
-        self._peak_return_time = peak_return_time
-        self._peak_true = 0
-        self._peak_ret = 0
+        self._avg_samples = int(avg_samples)
+        self._avg_val = self._chan()
+        self._peak_samples = int(peak_samples)
+        self._peak_return_time = int(peak_return_time)
+        self._peak_val = self._avg_val
+        self._peak_true = self._avg_val
+        self._peak_ret = self._avg_val
         self._peak_ts = time.ticks_ms();
 
     def read(self):
@@ -47,33 +50,31 @@ class Sound:
         return self._chan()
 
     def sample(self):
-        if self._buff is None:
+        if self._chan is None:
             raise Exception('Not initialized')
-        if self._avg_samples <= 0 and self._peak_samples <= 0:
-            raise Exception('No buffer')
         s = 0
-        for x in range(10):
-            s += self.read()
-        s /= 10
-        self._buff.pop(0)
-        self._buff.append(s)
+        for _ in range(5):
+            s += self._chan()
+        s //= 5
+        if self._avg_samples > 0:
+            self._avg_val = (self._avg_val * (self._avg_samples - 1) + s) // self._avg_samples
         if self._peak_samples > 0:
             t = time.ticks_ms()
             dt = time.ticks_diff(self._peak_ts, t)
-            val = sum(self._buff[-self._peak_samples:]) / self._peak_samples
+            self._peak_val = (self._peak_val * (self._peak_samples - 1) + s) // self._peak_samples
             if dt < 0:
-                self._peak_ret = val
-                self._peak_true = val
+                self._peak_ret = self._peak_val
+                self._peak_true = self._peak_val
                 self._peak_ts = t
             else:
                 self._peak_ret = self._peak_true * math.exp(-dt / self._peak_return_time)
-                if (val > self._peak_ret):
-                    self._peak_ret = val
-                    self._peak_true = val
+                if (self._peak_val > self._peak_ret):
+                    self._peak_ret = self._peak_val
+                    self._peak_true = self._peak_val
                     self._peak_ts = t
 
     def avg(self):
-        return int(sum(self._buff[-self._avg_samples:])/self._avg_samples)
+        return self._avg_val
 
     def peak(self):
         return int(self._peak_ret)
@@ -100,13 +101,18 @@ class THPA:
         self._humidity = None
         self._pressure = None
         self._gas_resistance = None
+        self._iaq_score = None
+        self._hum_avg = None
+        self._gas_avg = None
+        self._iaq_trend = None
         self._temp_offset = 0
         self._elevation = 0
 
     def init(self, humidity_oversample=thpa_const.OS_2X,
             pressure_oversample=thpa_const.OS_4X, temperature_oversample=thpa_const.OS_8X,
             filter=thpa_const.FILTER_SIZE_3, temp_offset=0, gas_heater_temperature=320,
-            gas_heater_duration=150, elevation=0):
+            gas_heater_duration=150, elevation=0, iaq_gas_ref=150000, iaq_humidity_ref=40,
+            iaq_gas_weight=75, iaq_samples=100):
         self._bme = bme680.BME680(i2c_addr=self._addr, i2c_device=self._exo._getI2C())
         self._bme.set_humidity_oversample(humidity_oversample)
         self._bme.set_pressure_oversample(pressure_oversample)
@@ -117,6 +123,56 @@ class THPA:
         self._bme.select_gas_heater_profile(0)
         self._temp_offset = temp_offset
         self._elevation = elevation
+        self._iaq_gas_ref = iaq_gas_ref
+        self._iaq_hum_ref = iaq_humidity_ref
+        self._iaq_gas_weight = iaq_gas_weight
+        self._iaq_hum_weight = 100 - iaq_gas_weight
+        self._iaq_samples = iaq_samples
+
+    def _process_iaq(self):
+        # humidity
+        if self._hum_avg is None:
+            self._hum_avg = self._humidity
+        else:
+            self._hum_avg = (self._hum_avg * (self._iaq_samples - 1) + self._humidity) / self._iaq_samples
+
+        hum_affinity = 100 - abs(self._hum_avg - self._iaq_hum_ref)
+        hum_weighted_score = hum_affinity * self._iaq_hum_weight / 100
+
+        # gas
+        if self._gas_avg is None:
+            self._gas_avg = self._gas_resistance
+        else:
+            self._gas_avg = (self._gas_avg * (self._iaq_samples - 1) + self._gas_resistance) / self._iaq_samples
+
+        gas_weighted_score = self._gas_avg * self._iaq_gas_weight / self._iaq_gas_ref
+        if gas_weighted_score > self._iaq_gas_weight:
+            gas_weighted_score_lim = self._iaq_gas_weight
+        else:
+            gas_weighted_score_lim = gas_weighted_score
+
+        # iaq
+        self._iaq_score = int((100 - (hum_weighted_score + gas_weighted_score_lim)) * 5)
+
+        # trend
+        self._iaq_trend_score = hum_weighted_score + gas_weighted_score
+
+        if self._iaq_trend is None:
+            self._iaq_trend = 0
+            self._iaq_trend_score_stable = self._iaq_trend_score
+        else:
+            iaq_trend = (self._iaq_trend_score - self._iaq_trend_score_prev) * 100
+            self._iaq_trend = (self._iaq_trend_prev * 9 + iaq_trend) / 10
+            if self._iaq_trend == 0 or (self._iaq_trend * self._iaq_trend_prev) < 0: # sign inversion
+                self._iaq_trend_score_stable = self._iaq_trend_score
+
+        self._iaq_trend_score_prev = self._iaq_trend_score
+        self._iaq_trend_prev = self._iaq_trend
+
+        if (0 < self._iaq_trend < 1) and (self._iaq_trend_score > self._iaq_trend_score_stable + 1):
+            self._iaq_trend = 1
+        elif (-1 < self._iaq_trend < 0) and (self._iaq_trend_score < self._iaq_trend_score_stable - 1):
+            self._iaq_trend = -1
 
     def read(self):
         if self._bme.get_sensor_data():
@@ -128,6 +184,7 @@ class THPA:
             self._pressure = self._bme.data.pressure / math.exp(-self._elevation / 8400)
             if self._bme.data.heat_stable:
                 self._gas_resistance = self._bme.data.gas_resistance
+                self._process_iaq()
             return True
         return False
 
@@ -142,6 +199,12 @@ class THPA:
 
     def gas_resistance(self):
         return self._gas_resistance
+
+    def iaq(self):
+        return self._iaq_score
+
+    def iaq_trend(self):
+        return int(self._iaq_trend)
 
 class Pir:
     # TODO

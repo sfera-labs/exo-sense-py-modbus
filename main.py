@@ -53,7 +53,6 @@ def _enable_ap(reboot_on_disable=True):
 
         if _status_mb_got_request:
             pycom.rgbled(0x000000)
-            pycom.heartbeat(config.HEARTBEAT_LED)
         else:
             pycom.rgbled(0x00ff00)
 
@@ -117,7 +116,6 @@ def _connect_wifi():
 
         if _status_mb_got_request:
             pycom.rgbled(0x000000)
-            pycom.heartbeat(config.HEARTBEAT_LED)
         else:
             pycom.rgbled(0x00ff00)
 
@@ -129,12 +127,12 @@ def _connect_wifi():
 def _modbus_rtu_process():
     global _status_mb_got_request
     global _status_ap_enabled_once
+    if _status_mb_got_request and not _ap_enabled:
+        pycom.rgbled(0x000000)
     if _modbus.process():
-        if not _status_mb_got_request:
-            _status_mb_got_request = True
-            if not _ap_enabled:
-                pycom.rgbled(0x000000)
-                pycom.heartbeat(config.HEARTBEAT_LED)
+        _status_mb_got_request = True
+        if config.HEARTBEAT_LED:
+            pycom.rgbled(0x0000ff)
     elif not _status_mb_got_request and config.AP_ON_TIMEOUT_SEC > 0 \
         and not _status_ap_enabled_once \
         and time.ticks_diff(start_ms, time.ticks_ms()) >= config.AP_ON_TIMEOUT_SEC * 1000:
@@ -144,11 +142,12 @@ def _modbus_rtu_process():
 def _modbus_tcp_process():
     global _status_mb_got_request
     if wlan.isconnected():
+        if _status_mb_got_request and not _ap_enabled:
+            pycom.rgbled(0x000000)
         if _modbus.process():
-            if not _status_mb_got_request:
-                pycom.rgbled(0x000000)
-                pycom.heartbeat(config.HEARTBEAT_LED)
-                _status_mb_got_request = True
+            _status_mb_got_request = True
+            if config.HEARTBEAT_LED:
+                pycom.rgbled(0x0000ff)
         _web.process(0)
     else:
         if _connect_wifi():
@@ -238,8 +237,12 @@ if not config_ERROR and (config.MB_RTU_ADDRESS > 0 or len(config.MB_TCP_IP) > 0)
         if time.ticks_diff(last_thpa_read, now) >= 5000:
             _exo.thpa.read()
             last_thpa_read = now
-        _modbus_process()
-        _wdt.feed()
+            print("thpa read")
+        try:
+            _modbus_process()
+            _wdt.feed()
+        except Exception as e:
+            _print_ex('_modbus_process() error', e)
 
 _enable_ap(reboot_on_disable=False)
 print('Waiting for reboot...')

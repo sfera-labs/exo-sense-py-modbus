@@ -116,6 +116,12 @@ class Modbus:
                     elif i == 307:
                         vals.append(self._exo.sound.peak())
                         signed.append(False)
+                    elif i == 308:
+                        vals.append(self._exo.thpa.iaq())
+                        signed.append(False)
+                    elif i == 309:
+                        vals.append(self._exo.thpa.iaq_trend())
+                        signed.append(True)
                     else:
                         request.send_exception(ModbusConst.ILLEGAL_DATA_ADDRESS)
                         break
