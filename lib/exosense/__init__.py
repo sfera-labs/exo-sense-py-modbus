@@ -204,6 +204,8 @@ class THPA:
         return self._iaq_score
 
     def iaq_trend(self):
+        if self._iaq_trend is None:
+            return None
         return int(self._iaq_trend)
 
 class Pir:
