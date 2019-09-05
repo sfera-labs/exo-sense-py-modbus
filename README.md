@@ -71,4 +71,19 @@ For the "Functions" column:
 |305|R|4|16|unsigned short|lx/10|Light intensity|
 |306|R|4|16|unsigned short|-|Noise intensity|
 |307|R|4|16|unsigned short|-|Peak programme meter simulation on noise value|
+|308|R|4|16|unsigned short|-|IAQ index (see [below](#iaq-index))|
+|309|R|4|16|signed short|-|IAQ trend: a positive value represents an IAQ improvement, a negative value an IAQ worsening, a value of zero represents a stable IAQ|
 |401|W|6|16|unsigned short|ms|Buzzer beep|
+
+### IAQ index
+
+IAQ (Indoor Air Quality) index description:
+
+|IAQ index|Air Quality|
+|:-------:|:---------:|
+|0-50|Good|
+|51-100|Average|
+|101-150|Little bad|
+|151-200|Bad|
+|201-300|Worse|
+|301-500|Very bad|
