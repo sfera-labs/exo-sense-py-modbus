@@ -1,5 +1,5 @@
 # Exo Sense Py Modbus
-Modbus RTU Slave and Modbus TCP Server app for Exo Sense Py, configurable via FTP or Web server.
+Modbus RTU Slave and Modbus TCP Server app for [Exo Sense Py](https://www.sferalabs.cc/exo-sense-py/), configurable via FTP or Web server.
 
 ## Installation
 Just copy all the files in this repo into the Pycom's flash memory.
